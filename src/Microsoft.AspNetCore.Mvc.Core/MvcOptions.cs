@@ -23,6 +23,7 @@ namespace Microsoft.AspNetCore.Mvc
     public class MvcOptions : IEnumerable<ICompatibilitySwitch>
     {
         private int _maxModelStateErrors = ModelStateDictionary.DefaultMaxAllowedErrors;
+        private int _maxValidationDepth = 512;
 
         // See CompatibilitySwitch.cs for guide on how to implement these.
         private readonly CompatibilitySwitch<bool> _allowBindingHeaderValuesToNonStringModelTypes;
@@ -395,6 +396,20 @@ namespace Microsoft.AspNetCore.Mvc
         /// Gets or sets the default value for the Permanent property of <see cref="RequireHttpsAttribute"/>.
         /// </summary>
         public bool RequireHttpsPermanent { get; set; }
+
+        public int MaxValidationDepth
+        {
+            get => _maxValidationDepth;
+            set
+            {
+                if (value < 1)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(value));
+                }
+
+                _maxValidationDepth = value;
+            }
+        }
 
         IEnumerator<ICompatibilitySwitch> IEnumerable<ICompatibilitySwitch>.GetEnumerator()
         {

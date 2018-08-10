@@ -22,6 +22,8 @@ namespace Microsoft.AspNetCore.Mvc.Internal
 {
     public class DefaultObjectValidatorTests
     {
+        private static readonly MvcOptions _options = new MvcOptions();
+
         private IModelMetadataProvider MetadataProvider { get; } = TestModelMetadataProvider.CreateDefaultProvider();
 
         [Fact]
@@ -1258,6 +1260,45 @@ namespace Microsoft.AspNetCore.Mvc.Internal
                 });
         }
 
+        [Fact]
+        public void Validate_Throws_IfValidationDepthExceedsMaxDepth()
+        {
+            // Arrange
+            var maxDepth = 10;
+            var expected = $"ValidationVisitor exceeded the maximum configured validation depth '{maxDepth}' when validating property '{nameof(DepthObject.Depth)}' on type '{nameof(DepthObject)}'. This may indicate a large or infinitely recursive object graph.";
+            _options.MaxValidationDepth = maxDepth;
+            var actionContext = new ActionContext();
+            var validator = CreateValidator();
+            var model = new DepthObject(maxDepth + 1);
+            var validationState = new ValidationStateDictionary
+            {
+                { model, new ValidationStateEntry() }
+            };
+
+            // Act & Assert
+            var ex = Assert.Throws<InvalidOperationException>(() => validator.Validate(actionContext, validationState, prefix: string.Empty, model));
+            Assert.Equal(expected, ex.Message);
+        }
+
+        [Fact]
+        public void Validate_WorksIfObjectGraphIsSmallerThanMaxDepth()
+        {
+            // Arrange
+            var maxDepth = 10;
+            _options.MaxValidationDepth = maxDepth;
+            var actionContext = new ActionContext();
+            var validator = CreateValidator();
+            var model = new DepthObject(maxDepth);
+            var validationState = new ValidationStateDictionary
+            {
+                { model, new ValidationStateEntry() }
+            };
+
+            // Act & Assert
+            validator.Validate(actionContext, validationState, prefix: string.Empty, model);
+            Assert.True(actionContext.ModelState.IsValid);
+        }
+
         private static DefaultObjectValidator CreateValidator(Type excludedType)
         {
             var excludeFilters = new List<SuppressChildValidationMetadataProvider>();
@@ -1268,14 +1309,14 @@ namespace Microsoft.AspNetCore.Mvc.Internal
 
             var metadataProvider = TestModelMetadataProvider.CreateDefaultProvider(excludeFilters.ToArray());
             var validatorProviders = TestModelValidatorProvider.CreateDefaultProvider().ValidatorProviders;
-            return new DefaultObjectValidator(metadataProvider, validatorProviders);
+            return new DefaultObjectValidator(metadataProvider, validatorProviders, new MvcOptions());
         }
 
         private static DefaultObjectValidator CreateValidator(params IMetadataDetailsProvider[] providers)
         {
             var metadataProvider = TestModelMetadataProvider.CreateDefaultProvider(providers);
             var validatorProviders = TestModelValidatorProvider.CreateDefaultProvider().ValidatorProviders;
-            return new DefaultObjectValidator(metadataProvider, validatorProviders);
+            return new DefaultObjectValidator(metadataProvider, validatorProviders, _options);
         }
 
         private static void AssertKeysEqual(ModelStateDictionary modelState, params string[] keys)
@@ -1441,6 +1482,38 @@ namespace Microsoft.AspNetCore.Mvc.Internal
         private class InvalidAddress
         {
             public string City { get; set; }
+        }
+
+        private class InfinitelyRecursiveType
+        {
+            public string Name { get; set; }
+
+            public InfinitelyRecursiveType RecursiveProperty => new InfinitelyRecursiveType();
+        }
+
+        private class DepthObject
+        {
+            public DepthObject(int maxAllowedDepth, int depth = 0)
+            {
+                MaxAllowedDepth = maxAllowedDepth;
+                Depth = depth;
+            }
+
+            public int Depth { get; }
+            public int MaxAllowedDepth { get; }
+
+            public DepthObject Instance
+            {
+                get
+                {
+                    if (Depth > MaxAllowedDepth)
+                    {
+                        return this;
+                    }
+
+                    return new DepthObject(MaxAllowedDepth, Depth + 1);
+                }
+            }
         }
     }
 }

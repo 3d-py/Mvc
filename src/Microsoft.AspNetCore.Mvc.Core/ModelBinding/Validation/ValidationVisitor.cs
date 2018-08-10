@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using Microsoft.AspNetCore.Mvc.Internal;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Internal;
+using Microsoft.AspNetCore.Mvc.ModelBinding.Metadata;
 
 namespace Microsoft.AspNetCore.Mvc.ModelBinding.Validation
 {
@@ -75,6 +76,9 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Validation
         protected object Model { get; set; }
         protected ModelMetadata Metadata { get; set; }
         protected IValidationStrategy Strategy { get; set; }
+
+        protected int ValidationDepth { get; set; }
+        public int MaxValidationDepth { get; set; }
 
         /// <summary>
         /// Indicates whether validation of a complex type should be performed if validation fails for any of its children. The default behavior is false.
@@ -190,6 +194,27 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding.Validation
             {
                 // This is a cycle, bail.
                 return true;
+            }
+
+            if (++ValidationDepth > MaxValidationDepth)
+            {
+                // Non cyclic but too deep an object graph.
+                string displayString;
+                switch (metadata.MetadataKind)
+                {
+                    case ModelMetadataKind.Property:
+                        displayString = $"property '{metadata.Name}' on type '{metadata.ContainerType.Name}'";
+                        break;
+
+                    default:
+                        displayString = $"model of type '{metadata.ModelType.Name}'";
+                        break;
+                }
+
+                // Pop the current model to make ValidationStack.Dispose happy
+                CurrentPath.Pop(model);
+
+                throw new InvalidOperationException($"ValidationVisitor exceeded the maximum configured validation depth '{MaxValidationDepth}' when validating {displayString}. This may indicate a large or infinitely recursive object graph.");
             }
 
             var entry = GetValidationEntry(model);
